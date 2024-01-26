@@ -1,81 +1,20 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AnalysisServices.AdomdClient;
-using Newtonsoft.Json;
-using System.Data.Common;
 
 namespace BiProject.Controllers
 {
-        public class SSASController : Controller
+    public class SSASController : Controller
 
-        {
+    {
         private static readonly string CNX_STRING = "Provider=MSOLAP; Data Source=CFEKI_W_P;Initial Catalog=Comms_DW;";
         private static readonly string CUBE = "[Comms DW]";
-            private readonly IConfiguration _configuration;
+        private readonly IConfiguration _configuration;
 
-            public SSASController(IConfiguration configuration)
-            {
-                _configuration = configuration;
-            }
-        /**
-         * Simple queries by a single factor 
-         */
-        [Route("api/getByCampaign")]
-        public IActionResult GetByCampaign(string measures)
+        public SSASController(IConfiguration configuration)
         {
-            string[] split_measures = measures.Split(',');
-            string[] dimensions = { "[Campaigns].[Campaign Name].[Campaign Name]" };
-            string connectionString = CNX_STRING;
-
-
-            System.Text.StringBuilder result = new System.Text.StringBuilder();
-
-
-
-            //foreach (var measure in split_measures)
-            //{
-            using (AdomdConnection conn = new AdomdConnection(connectionString))
-            {
-                conn.Open();
-
-                using (AdomdCommand cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = BuildCommand(split_measures,dimensions);
-                    Console.WriteLine(cmd.CommandText);
-
-                    CellSet cs = cmd.ExecuteCellSet();
-
-                    foreach (var dim in dimensions) {
-                        result.Append(",");
-                    }
-
-                    TupleCollection tuplesOnColumns = cs.Axes[0].Set.Tuples;
-                    foreach (Microsoft.AnalysisServices.AdomdClient.Tuple column in tuplesOnColumns)
-                    {
-                        result.Append(column.Members[0].Caption + ",");
-                    }
-                    result.Length--;
-                    result.Append(";");
-                    
-                    //Output the row captions from the second axis and cell data
-                    //Note that this procedure assumes a two-dimensional cellset
-                    TupleCollection tuplesOnRows = cs.Axes[1].Set.Tuples;
-                    for (int row = 0; row < tuplesOnRows.Count; row++)
-                    {
-                        result.Append(tuplesOnRows[row].Members[0].Caption + ",");
-                        for (int col = 0; col < tuplesOnColumns.Count; col++)
-                        {
-                            result.Append(cs.Cells[col, row].FormattedValue + ",");
-                        }
-                        result.Length--;
-                        result.Append(";");
-                    }
-
-                }
-                //    }
-                //}
-                return Json(result.ToString());
-            }
+            _configuration = configuration;
         }
+
 
         private string BuildCommand(string[] measures, string[] dimensions)
         {
@@ -104,121 +43,151 @@ namespace BiProject.Controllers
 
         }
 
-        [Route("api/getByGender")]
-        [Route("api/getByAgeBand")]
-        [Route("api/getBySegment")]
-
-
-        /**
-        * 2-factor queries
-        */
-        [Route("api/getByCampaignAndGender")]
-        [Route("api/getByCampaignAndAge")]
-        [Route("api/getByCampaignAndSegment")]
-        [Route("api/getByGenderAndAge")]
-        [Route("api/getByGenderAndSegment")]
-
-
-        /**
-        * 3-factor queries
-        */
-
-        [Route("api/getByCampaignGenderAndAge")]
-
-
-        [Route("SSAS/getByCampaign/{measure}")]
-        public IActionResult getByCampaign(string measure)
+        private string ExecuteMDXQuery(string[] measures, string[] dimensions, string cube)
         {
             string connectionString = CNX_STRING;
-
-            List<List<string>> resultData = new List<List<string>>();
+            System.Text.StringBuilder result = new System.Text.StringBuilder();
             using (AdomdConnection conn = new AdomdConnection(connectionString))
             {
                 conn.Open();
 
                 using (AdomdCommand cmd = conn.CreateCommand())
                 {
-                    // Build the MDX query dynamically based on the provided measure and dimension
-                    string mdxQuery = $"SELECT [Measures].[{measure}] ON COLUMNS, NON EMPTY([Campaigns].[Campaign Name].[Campaign Name]) ON ROWS FROM [Comms DW]";
+                    cmd.CommandText = BuildCommand(measures, dimensions);
+                    Console.WriteLine(cmd.CommandText);
 
-                    cmd.CommandText = mdxQuery;
+                    CellSet cs = cmd.ExecuteCellSet();
 
-                    using (AdomdDataReader reader = cmd.ExecuteReader())
+                    foreach (var dim in dimensions)
                     {
-                        // Process the results and store them in the list
-                        while (reader.Read())
-                        {
-                            List<string> row = new List<string>();
-
-                            for (int i = 0; i < reader.FieldCount; i++)
-                            {
-                                row.Add(reader[i].ToString());
-                            }
-
-                            resultData.Add(row);
-                        }
+                        result.Append(",");
                     }
-                }
-            }
 
-            // Return the result data as JSON
-            return Json(resultData);
+                    TupleCollection tuplesOnColumns = cs.Axes[0].Set.Tuples;
+                    foreach (Microsoft.AnalysisServices.AdomdClient.Tuple column in tuplesOnColumns)
+                    {
+                        result.Append(column.Members[0].Caption + ",");
+                    }
+                    result.Length--;
+                    result.Append(";");
+
+                    TupleCollection tuplesOnRows = cs.Axes[1].Set.Tuples;
+                    for (int row = 0; row < tuplesOnRows.Count; row++)
+                    {
+                        result.Append(tuplesOnRows[row].Members[0].Caption + ",");
+                        for (int col = 0; col < tuplesOnColumns.Count; col++)
+                        {
+                            result.Append(cs.Cells[col, row].FormattedValue + ",");
+                        }
+                        result.Length--;
+                        result.Append(";");
+                    }
+
+                }
+
+            }
+            return result.ToString();
         }
 
 
-        public IActionResult ExecuteMDXQuery()
-            {
-                string connectionString = _configuration.GetConnectionString("SSASConnection");
+        /**
+         * count queries for the homepage
+         **/
+        [Route("api/count/{measure}")]
 
-                using (AdomdConnection conn = new AdomdConnection(connectionString))
-                {
-                    conn.Open();
+        public IActionResult countQuery(string measure)
+        {
+            string[] measures = { measure };
+            string[] dimensions = { "[Campaigns].[Campaign Name]" };
+            return Json(ExecuteMDXQuery(measures, dimensions, CUBE));
+        }
 
-                    using (AdomdCommand cmd = conn.CreateCommand())
-                    {
-                        cmd.CommandText = "Select {[Measures].[Views]} On columns, ( {[Campaigns].[Campaign Name]}) on rows From [Comms DW]";
-
-                        using (AdomdDataReader reader = cmd.ExecuteReader())
-                        {
-                            // Process the results
-                        }
-                    }
-                }
-
-                return View();
-            }
-
-
-            public IActionResult TestSSASConnection()
-            {
-            string connectionString = "Provider=MSOLAP; Data Source=CFEKI_W_P;Initial Catalog=Comms_DW;";
-            Console.WriteLine(connectionString);
-            List<string> resultData = new List<string>();  // This list will store your result data
+        /**
+        * Simple queries by a single factor 
+        */
+        [Route("api/getByCampaign")]
+        public IActionResult GetByCampaign(string measures)
+        {
+            string[] split_measures = measures.Split(',');
+            string[] dimensions = { "[Campaigns].[Campaign Name].[Campaign Name]" };
+            return Json(ExecuteMDXQuery(split_measures, dimensions, CUBE));
+        }
 
 
-            using (AdomdConnection conn = new AdomdConnection(connectionString))
-                {
-                    conn.Open();
 
-                    using (AdomdCommand cmd = conn.CreateCommand())
-                    {
-                        // A simple MDX query to retrieve data. Replace this with an actual query based on your cube structure.
-                        cmd.CommandText = "Select {[Measures].[Views]} On columns, ( {[Campaigns].[Campaign Name]}) on rows From [Comms DW]";
+        [Route("api/getByGender")]
+        public IActionResult GetByGender(string measures)
+        {
+            string[] split_measures = measures.Split(',');
+            string[] dimensions = { "[Genders].[Gender ID].[Gender ID]" };
+            return Json(ExecuteMDXQuery(split_measures, dimensions, CUBE));
+        }
+        [Route("api/getByAgeBand")]
+        public IActionResult GetByAgeBand(string measures)
+        {
+            string[] split_measures = measures.Split(',');
+            string[] dimensions = { "[Age Bands].[Age ID].[Age ID]" };
+            return Json(ExecuteMDXQuery(split_measures, dimensions, CUBE));
+        }
+        [Route("api/getBySegment")]
+        public IActionResult GetBySegment(string measures)
+        {
+            string[] split_measures = measures.Split(',');
+            string[] dimensions = { "[Segments].[Segment].[Segment]" };
+            return Json(ExecuteMDXQuery(split_measures, dimensions, CUBE));
+        }
 
-                        using (AdomdDataReader reader = cmd.ExecuteReader())
-                        {
-                        while (reader.Read())
-                        {
-                            resultData.Add(reader[0].ToString());  // Adjust the index based on your actual result structure
-                        }
-                    }
-                    }
-                }
+        /**
+        * 2-factor queries
+        */
+        [Route("api/getByCampaignAndGender")]
+        public IActionResult GetByCampaignAndGender(string measures)
+        {
+            string[] split_measures = measures.Split(',');
+            string[] dimensions = { "[Campaigns].[Campaign Name].[Campaign Name]", "[Genders].[Gender ID].[Gender ID]" };
+            return Json(ExecuteMDXQuery(split_measures, dimensions, CUBE));
+        }
+        [Route("api/getByCampaignAndAge")]
+        public IActionResult GetByCampaignAndAge(string measures)
+        {
+            string[] split_measures = measures.Split(',');
+            string[] dimensions = { "[Campaigns].[Campaign Name].[Campaign Name]", "[Age Bands].[Age ID].[Age ID]" };
+            return Json(ExecuteMDXQuery(split_measures, dimensions, CUBE));
+        }
+        [Route("api/getByCampaignAndSegment")]
+        public IActionResult GetByCampaignAndSegment(string measures)
+        {
+            string[] split_measures = measures.Split(',');
+            string[] dimensions = { "[Campaigns].[Campaign Name].[Campaign Name]", "[Segments].[Segment].[Segment]" };
+            return Json(ExecuteMDXQuery(split_measures, dimensions, CUBE));
+        }
+        [Route("api/getByGenderAndAge")]
+        public IActionResult GetByGenderAndAge(string measures)
+        {
+            string[] split_measures = measures.Split(',');
+            string[] dimensions = { "[Genders].[Gender ID].[Gender ID]", "[Age Bands].[Age ID].[Age ID]" };
+            return Json(ExecuteMDXQuery(split_measures, dimensions, CUBE));
+        }
+        [Route("api/getByGenderAndSegment")]
+        public IActionResult GetByGenderAndSegmet(string measures)
+        {
+            string[] split_measures = measures.Split(',');
+            string[] dimensions = { "[Genders].[Gender ID].[Gender ID]", "[Segments].[Segment].[Segment]" };
+            return Json(ExecuteMDXQuery(split_measures, dimensions, CUBE));
+        }
 
-                return View(resultData);
-            }
+        /**
+        * 3-factor queries
+        */
 
+        [Route("api/getByCampaignGenderAndAge")]
+        public IActionResult GetByCampaignGenderAndAge(string measures)
+        {
+            string[] split_measures = measures.Split(',');
+            string[] dimensions = { "[Campaigns].[Campaign Name].[Campaign Name]", "[Genders].[Gender ID].[Gender ID]", "[Age Bands].[Age ID].[Age ID]" };
+            return Json(ExecuteMDXQuery(split_measures, dimensions, CUBE));
         }
 
 
     }
+}
