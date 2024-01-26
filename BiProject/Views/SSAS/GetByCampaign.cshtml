@@ -1,0 +1,24 @@
+﻿@model List<List<string>>
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SSAS Connection Test</title>
+</head>
+<body>
+    <h2>SSAS Connection Test Results</h2>
+
+    <table border="1">
+
+        @foreach (var row in Model)
+        {
+            <tr>
+                @foreach (var cell in row)
+                {
+                    <td>@cell</td>
+                }
+            </tr>
+        }
+    </table>
+</body>
+</html>
